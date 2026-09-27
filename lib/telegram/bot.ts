@@ -23,6 +23,44 @@ async function telegramCall<T>(method: string, payload: Record<string, unknown>)
   return body.result;
 }
 
+export async function getBotProfile() {
+  return telegramCall<{
+    id: number;
+    is_bot: boolean;
+    first_name: string;
+    username?: string;
+  }>("getMe", {});
+}
+
+export async function getChatMember(chatId: string, userId: number) {
+  return telegramCall<{
+    status: string;
+    can_post_messages?: boolean;
+  }>("getChatMember", {
+    chat_id: chatId,
+    user_id: userId,
+  });
+}
+
+export async function configureTelegramWebhook(baseUrl: string) {
+  const url = new URL("/api/telegram/webhook", baseUrl).toString();
+
+  return telegramCall<boolean>("setWebhook", {
+    url,
+    secret_token: requireEnv("TELEGRAM_WEBHOOK_SECRET"),
+    allowed_updates: ["message", "callback_query"],
+    drop_pending_updates: false,
+  });
+}
+
+export async function sendMessage(chatId: string | number, text: string) {
+  return telegramCall<{ message_id: number }>("sendMessage", {
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: true,
+  });
+}
+
 export async function sendDraftForReview(draft: { id: string; content: string }) {
   const chatId = requireEnv("TELEGRAM_ADMIN_CHAT_ID");
   const text = `🧾 Yangi huquqiy draft\n\n${draft.content}`.slice(0, 4000);
