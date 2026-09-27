@@ -2,16 +2,22 @@ import { and, eq } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { drafts, processingLogs, publishedPosts } from "@/lib/db/schema";
-import { requireEnv } from "@/lib/env";
+import { optionalEnv, requireEnv } from "@/lib/env";
 import {
   answerCallbackQuery,
   publishToTargetChannel,
+  sendMessage,
 } from "@/lib/telegram/bot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type TelegramUpdate = {
+  message?: {
+    chat: { id: number; type: string };
+    from?: { id: number; first_name?: string };
+    text?: string;
+  };
   callback_query?: {
     id: string;
     from: { id: number };
@@ -85,13 +91,35 @@ export async function POST(request: Request) {
   }
 
   const update = (await request.json()) as TelegramUpdate;
-  const callback = update.callback_query;
 
+  if (update.message?.text === "/start" && update.message.from) {
+    const adminUserId = optionalEnv("TELEGRAM_ADMIN_USER_ID");
+    const adminChatId = optionalEnv("TELEGRAM_ADMIN_CHAT_ID");
+    const isConfiguredAdmin =
+      adminUserId === String(update.message.from.id) &&
+      adminChatId === String(update.message.chat.id);
+
+    const setupText = [
+      "Legalbotassistend sozlash ma’lumotlari:",
+      `User ID: ${update.message.from.id}`,
+      `Chat ID: ${update.message.chat.id}`,
+      "",
+      isConfiguredAdmin
+        ? "✅ Siz admin sifatida sozlangansiz."
+        : "Bu ID’larni Vercel Environment Variables’da TELEGRAM_ADMIN_USER_ID va TELEGRAM_ADMIN_CHAT_ID sifatida kiriting.",
+    ].join("\n");
+
+    await sendMessage(update.message.chat.id, setupText);
+    return Response.json({ ok: true, setup: true });
+  }
+
+  const callback = update.callback_query;
   if (!callback?.data) {
     return Response.json({ ok: true, ignored: true });
   }
 
-  if (String(callback.from.id) !== requireEnv("TELEGRAM_ADMIN_USER_ID")) {
+  const configuredAdminId = optionalEnv("TELEGRAM_ADMIN_USER_ID");
+  if (!configuredAdminId || String(callback.from.id) !== configuredAdminId) {
     await answerCallbackQuery(callback.id, "Ruxsat yo‘q.", true);
     return Response.json({ ok: true, ignored: true });
   }
